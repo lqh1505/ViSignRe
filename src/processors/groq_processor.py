@@ -9,7 +9,6 @@ from config import Config
 
 load_dotenv()
 
-
 class GroqProcessor:
     def __init__(self):
         api_key = os.getenv("GROQ_API_KEY")

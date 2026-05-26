@@ -1,0 +1,943 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ViSignRe — Nhận diện ngôn ngữ ký hiệu</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Space+Grotesk:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg: #0a0c0f;
+    --bg-panel: #111318;
+    --bg-card: #161920;
+    --bg-input: #1c2028;
+    --border: rgba(255,255,255,0.07);
+    --border-hover: rgba(255,255,255,0.14);
+    --accent: #00d4a0;
+    --accent-dim: rgba(0,212,160,0.12);
+    --accent-glow: rgba(0,212,160,0.25);
+    --text-primary: #e8eaf0;
+    --text-secondary: #8892a0;
+    --text-muted: #4a5060;
+    --red: #ff4d6a;
+    --yellow: #f5c842;
+    --blue: #4da6ff;
+    --mono: 'JetBrains Mono', monospace;
+    --sans: 'Space Grotesk', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: var(--sans);
+    background: var(--bg);
+    color: var(--text-primary);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* ── Header ─────────────────────────────────────────────────── */
+  header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-panel);
+  }
+
+  .logo {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .logo-mark {
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 600; font-size: 14px; color: #000; letter-spacing: -0.5px;
+  }
+
+  .logo-text { font-size: 18px; font-weight: 600; letter-spacing: -0.3px; }
+  .logo-text span { color: var(--accent); }
+
+  .header-status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-family: var(--mono); color: var(--text-secondary);
+  }
+
+  .status-dot {
+    width: 7px; height: 7px; border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s, box-shadow 0.3s;
+  }
+  .status-dot.active { background: var(--accent); box-shadow: 0 0 8px var(--accent-glow); }
+  .status-dot.error { background: var(--red); }
+
+  /* ── Main layout ─────────────────────────────────────────────── */
+  main {
+    display: grid;
+    grid-template-columns: 1fr 320px;
+    grid-template-rows: auto 1fr;
+    gap: 0;
+    height: calc(100vh - 65px);
+    overflow: hidden;
+  }
+
+  /* ── Upload zone ─────────────────────────────────────────────── */
+  #upload-section {
+    grid-column: 1;
+    grid-row: 1;
+    padding: 16px 24px;
+    border-bottom: 1px solid var(--border);
+    border-right: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 20px;
+  }
+
+  #upload-section.hidden { display: none; }
+
+  .upload-drop {
+    flex: 1;
+    border: 1px dashed var(--border-hover);
+    border-radius: 12px;
+    padding: 20px 24px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+    position: relative;
+  }
+  .upload-drop:hover, .upload-drop.drag-over {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+  }
+  .upload-drop input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+  .upload-icon { font-size: 28px; margin-bottom: 6px; }
+  .upload-text { font-size: 15px; color: var(--text-secondary); }
+  .upload-text strong { color: var(--accent); font-weight: 500; }
+  .upload-sub { font-size: 12px; color: var(--text-muted); margin-top: 6px; font-family: var(--mono); }
+
+  .upload-info {
+    width: 220px; min-width: 200px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    display: flex; flex-direction: column; gap: 12px;
+  }
+
+  .upload-info label { font-size: 12px; color: var(--text-muted); font-family: var(--mono); text-transform: uppercase; letter-spacing: 0.8px; }
+
+  .toggle-row {
+    display: flex; align-items: center; justify-content: space-between;
+  }
+
+  .toggle {
+    width: 38px; height: 22px;
+    background: var(--bg-input);
+    border-radius: 11px;
+    border: 1px solid var(--border-hover);
+    position: relative; cursor: pointer;
+    transition: background 0.2s;
+  }
+  .toggle.on { background: var(--accent); border-color: var(--accent); }
+  .toggle::after {
+    content: '';
+    position: absolute; top: 3px; left: 3px;
+    width: 14px; height: 14px; border-radius: 50%;
+    background: #fff;
+    transition: transform 0.2s;
+  }
+  .toggle.on::after { transform: translateX(16px); }
+
+  .btn-start {
+    width: 100%;
+    padding: 11px;
+    background: var(--accent);
+    color: #000;
+    border: none;
+    border-radius: 8px;
+    font-family: var(--sans);
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: opacity 0.2s, transform 0.1s;
+  }
+  .btn-start:hover { opacity: 0.9; }
+  .btn-start:active { transform: scale(0.98); }
+  .btn-start:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* ── Video panel ─────────────────────────────────────────────── */
+  #video-panel {
+    grid-column: 1;
+    grid-row: 2;
+    background: var(--bg-card);
+    display: flex; flex-direction: column;
+    position: relative;
+    overflow: hidden;
+    min-height: 0;
+  }
+
+  .video-wrap {
+    flex: 1;
+    display: flex; align-items: center; justify-content: center;
+    position: relative;
+    background: #050709;
+    min-height: 0;
+  }
+
+  #video-frame {
+    max-width: 100%; max-height: 100%;
+    object-fit: contain;
+    display: none;
+  }
+
+  .video-placeholder {
+    display: flex; flex-direction: column;
+    align-items: center; gap: 14px;
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+  .video-placeholder svg { opacity: 0.3; }
+
+  #fps-badge {
+    position: absolute; top: 12px; left: 12px;
+    background: rgba(0,0,0,0.7);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    display: none;
+  }
+
+  #current-word-overlay {
+    position: absolute; bottom: 60px; left: 12px;
+    background: rgba(0,0,0,0.75);
+    border-left: 3px solid var(--accent);
+    border-radius: 0 6px 6px 0;
+    padding: 8px 14px;
+    font-size: 20px;
+    font-weight: 500;
+    display: none;
+  }
+
+  #gesturing-badge {
+    position: absolute; top: 12px; right: 12px;
+    background: rgba(0,212,160,0.15);
+    border: 1px solid var(--accent);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+    display: none;
+    animation: pulse-badge 1.2s ease-in-out infinite;
+  }
+
+  @keyframes pulse-badge {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  .video-progress {
+    height: 3px;
+    background: var(--bg-input);
+    position: relative;
+  }
+  #progress-fill {
+    height: 100%;
+    background: var(--accent);
+    width: 0%;
+    transition: width 0.2s;
+  }
+
+  .video-meta {
+    padding: 10px 16px;
+    display: flex; align-items: center; gap: 16px;
+    font-size: 12px; font-family: var(--mono);
+    color: var(--text-secondary);
+    border-top: 1px solid var(--border);
+  }
+
+  .meta-chip {
+    display: flex; align-items: center; gap: 6px;
+  }
+  .meta-chip .dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-muted);
+  }
+  .meta-chip .dot.active { background: var(--accent); }
+  .meta-chip .dot.inactive { background: var(--text-muted); }
+
+  .btn-stop {
+    margin-left: auto;
+    padding: 5px 12px;
+    background: transparent;
+    border: 1px solid var(--border-hover);
+    border-radius: 6px;
+    color: var(--red);
+    font-family: var(--mono);
+    font-size: 11px;
+    cursor: pointer;
+    transition: background 0.2s;
+    display: none;
+  }
+  .btn-stop:hover { background: rgba(255,77,106,0.1); }
+
+  /* ── Right sidebar ───────────────────────────────────────────── */
+  #sidebar {
+    grid-column: 2;
+    grid-row: 1 / -1;
+    display: flex; flex-direction: column;
+    overflow-y: auto;
+    overflow-x: hidden;
+    border-left: 1px solid var(--border);
+    height: 100%;
+  }
+
+  .sidebar-section {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+
+  .section-label {
+    font-size: 11px;
+    font-family: var(--mono);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+    margin-bottom: 14px;
+  }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .stat-card {
+    background: var(--bg-input);
+    border-radius: 8px;
+    padding: 8px 10px;
+    border: 1px solid var(--border);
+  }
+  .stat-card .stat-label { font-size: 10px; color: var(--text-muted); font-family: var(--mono); margin-bottom: 3px; }
+  .stat-card .stat-value { font-size: 15px; font-weight: 500; color: var(--text-primary); font-family: var(--mono); }
+  .stat-card .stat-value.accent { color: var(--accent); }
+  .stat-card .stat-unit { font-size: 10px; color: var(--text-muted); }
+
+  /* Words detected */
+  #words-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    min-height: 36px;
+    max-height: 120px;
+    overflow-y: auto;
+    padding-right: 2px;
+  }
+
+  .word-chip {
+    background: var(--accent-dim);
+    border: 1px solid rgba(0,212,160,0.25);
+    border-radius: 6px;
+    padding: 4px 10px;
+    font-size: 13px;
+    color: var(--accent);
+    font-family: var(--mono);
+    animation: chip-in 0.25s ease;
+  }
+  .word-chip.new {
+    background: rgba(0,212,160,0.25);
+    border-color: var(--accent);
+  }
+
+  @keyframes chip-in {
+    from { opacity: 0; transform: scale(0.8) translateY(4px); }
+    to   { opacity: 1; transform: scale(1)   translateY(0); }
+  }
+
+  /* TTS status */
+  .tts-status {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 12px; font-family: var(--mono);
+    color: var(--text-secondary);
+  }
+  #tts-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--text-muted);
+    transition: background 0.3s;
+  }
+  #tts-dot.ready { background: var(--accent); }
+  #tts-dot.busy { background: var(--yellow); }
+  #tts-dot.error { background: var(--red); }
+  #tts-dot.disabled { background: var(--text-muted); }
+
+  /* Sentence panel */
+  #sentence-section {
+    padding: 16px 20px 20px;
+    display: flex; flex-direction: column;
+    flex-shrink: 0;
+  }
+
+  #sentence-box {
+    background: var(--bg-input);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text-primary);
+    min-height: 100px;
+    max-height: 200px;
+    overflow-y: auto;
+    transition: border-color 0.3s;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  #sentence-box.updated { border-color: var(--accent); }
+  #sentence-box.placeholder { color: var(--text-muted); font-style: italic; font-size: 14px; }
+
+  .sentence-actions {
+    display: flex; gap: 8px; margin-top: 10px;
+  }
+
+  .btn-action {
+    flex: 1;
+    padding: 8px;
+    background: transparent;
+    border: 1px solid var(--border-hover);
+    border-radius: 7px;
+    font-family: var(--sans);
+    font-size: 12px;
+    color: var(--text-secondary);
+    cursor: pointer;
+    transition: background 0.2s, color 0.2s, border-color 0.2s;
+  }
+  .btn-action:hover { background: var(--bg-input); color: var(--text-primary); border-color: var(--border-hover); }
+  .btn-action.primary { border-color: rgba(0,212,160,0.3); color: var(--accent); }
+  .btn-action.primary:hover { background: var(--accent-dim); }
+
+  /* Upload progress toast */
+  #toast {
+    position: fixed; bottom: 24px; right: 24px;
+    background: var(--bg-card);
+    border: 1px solid var(--border-hover);
+    border-radius: 10px;
+    padding: 12px 18px;
+    font-size: 13px;
+    font-family: var(--mono);
+    color: var(--text-secondary);
+    display: none;
+    z-index: 100;
+    animation: slide-up 0.2s ease;
+  }
+  .toast-accent { color: var(--accent); }
+
+  @keyframes slide-up {
+    from { opacity: 0; transform: translateY(10px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ── Scrollbar ───────────────────────────────────────────────── */
+  ::-webkit-scrollbar { width: 4px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--border-hover); border-radius: 2px; }
+
+  /* ── Responsive ──────────────────────────────────────────────── */
+  @media (max-width: 900px) {
+    main {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto auto auto;
+      height: auto;
+      overflow: visible;
+    }
+    #upload-section { grid-column: 1; grid-row: 1; border-right: none; flex-direction: column; }
+    #video-panel { grid-column: 1; grid-row: 2; min-height: 300px; }
+    #sidebar { grid-column: 1; grid-row: 3; height: auto; overflow: visible; border-left: none; border-top: 1px solid var(--border); }
+    .upload-info { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="logo">
+    <div class="logo-mark">Vi</div>
+    <div class="logo-text"><span>ViSign</span>Re</div>
+  </div>
+  <div class="header-status">
+    <div class="status-dot" id="conn-dot"></div>
+    <span id="conn-label">Chờ video</span>
+  </div>
+</header>
+
+<main>
+  <!-- Upload Bar -->
+  <section id="upload-section">
+    <div class="upload-drop" id="drop-zone">
+      <input type="file" id="file-input" accept="video/*">
+      <div class="upload-icon">🎥</div>
+      <div class="upload-text">Kéo thả video vào đây hoặc <strong>chọn file</strong></div>
+      <div class="upload-sub">MP4 · AVI · MOV · MKV · WEBM</div>
+    </div>
+
+    <div class="upload-info">
+      <div>
+        <label>Tên file</label>
+        <div id="file-name" style="font-size:13px;color:var(--text-secondary);margin-top:4px;font-family:var(--mono);word-break:break-all;">—</div>
+      </div>
+      <div class="toggle-row">
+        <label>Dùng Groq LLM</label>
+        <div class="toggle" id="groq-toggle"></div>
+      </div>
+      <button class="btn-start" id="btn-start" disabled>Bắt đầu phân tích</button>
+    </div>
+  </section>
+
+  <!-- Video Panel -->
+  <section id="video-panel">
+    <div class="video-wrap" id="video-wrap">
+      <img id="video-frame" alt="Video stream">
+      <div class="video-placeholder" id="video-placeholder">
+        <svg width="64" height="64" viewBox="0 0 64 64" fill="none">
+          <rect x="4" y="14" width="40" height="30" rx="4" stroke="currentColor" stroke-width="2"/>
+          <path d="M44 24l12-8v24l-12-8V24z" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+        <span>Tải video để bắt đầu</span>
+      </div>
+      <div id="fps-badge">—</div>
+      <div id="current-word-overlay"></div>
+      <div id="gesturing-badge">🤙 Đang nhận...</div>
+    </div>
+    <div class="video-progress">
+      <div id="progress-fill"></div>
+    </div>
+    <div class="video-meta">
+      <div class="meta-chip">
+        <div class="dot" id="pose-dot"></div>
+        <span>Pose</span>
+      </div>
+      <div class="meta-chip">
+        <div class="dot" id="hand-dot"></div>
+        <span>Tay</span>
+      </div>
+      <div class="meta-chip" id="frame-counter" style="color:var(--text-muted)">
+        Khung: —
+      </div>
+      <button class="btn-stop" id="btn-stop">■ Dừng</button>
+    </div>
+  </section>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <!-- Stats -->
+    <div class="sidebar-section">
+      <div class="section-label">Thông số phân tích</div>
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-label">FPS</div>
+          <div class="stat-value accent" id="stat-fps">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Độ tin cậy</div>
+          <div class="stat-value" id="stat-conf">—</div>
+          <div class="stat-unit">%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Model (ms)</div>
+          <div class="stat-value" id="stat-model">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Hands (ms)</div>
+          <div class="stat-value" id="stat-hand">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Pose (ms)</div>
+          <div class="stat-value" id="stat-pose">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Giới tính</div>
+          <div class="stat-value" id="stat-gender" style="font-size:13px">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TTS Status -->
+    <div class="sidebar-section">
+      <div class="section-label">Trạng thái TTS</div>
+      <div class="tts-status">
+        <div id="tts-dot"></div>
+        <span id="tts-label">—</span>
+      </div>
+    </div>
+
+    <!-- Words -->
+    <div class="sidebar-section" style="flex-shrink:0">
+      <div class="section-label">Từ đã nhận diện</div>
+      <div id="words-list">
+        <span class="placeholder-text" style="font-size:12px;color:var(--text-muted);font-family:var(--mono)">Chưa có từ nào...</span>
+      </div>
+    </div>
+
+    <!-- Sentence -->
+    <div id="sentence-section">
+      <div class="section-label">Câu hoàn chỉnh</div>
+      <div id="sentence-box" class="placeholder">Câu sẽ xuất hiện ở đây sau khi phân tích xong...</div>
+      <div class="sentence-actions">
+        <button class="btn-action primary" id="btn-copy">Sao chép</button>
+        <button class="btn-action" id="btn-reset">Làm mới</button>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div id="toast"></div>
+
+<script>
+  // ── State ────────────────────────────────────────────────────────────────
+  let sessionId = null;
+  let ws = null;
+  let useGroq = false;
+  let processing = false;
+  let wordCount = 0;
+
+  // ── Elements ─────────────────────────────────────────────────────────────
+  const fileInput   = document.getElementById('file-input');
+  const dropZone    = document.getElementById('drop-zone');
+  const fileName    = document.getElementById('file-name');
+  const groqToggle  = document.getElementById('groq-toggle');
+  const btnStart    = document.getElementById('btn-start');
+  const btnStop     = document.getElementById('btn-stop');
+  const btnCopy     = document.getElementById('btn-copy');
+  const btnReset    = document.getElementById('btn-reset');
+  const videoFrame  = document.getElementById('video-frame');
+  const videoPlaceholder = document.getElementById('video-placeholder');
+  const fpsBadge    = document.getElementById('fps-badge');
+  const wordOverlay = document.getElementById('current-word-overlay');
+  const progressFill= document.getElementById('progress-fill');
+  const wordsList   = document.getElementById('words-list');
+  const sentenceBox = document.getElementById('sentence-box');
+  const connDot     = document.getElementById('conn-dot');
+  const connLabel   = document.getElementById('conn-label');
+  const poseDot     = document.getElementById('pose-dot');
+  const handDot     = document.getElementById('hand-dot');
+  const frameCounter= document.getElementById('frame-counter');
+  const ttsDot      = document.getElementById('tts-dot');
+  const ttsLabel    = document.getElementById('tts-label');
+  const toast       = document.getElementById('toast');
+
+  const statFps    = document.getElementById('stat-fps');
+  const statConf   = document.getElementById('stat-conf');
+  const statModel  = document.getElementById('stat-model');
+  const statHand   = document.getElementById('stat-hand');
+  const statPose   = document.getElementById('stat-pose');
+  const statGender = document.getElementById('stat-gender');
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function showToast(msg, duration = 3000) {
+    toast.innerHTML = msg;
+    toast.style.display = 'block';
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => toast.style.display = 'none', duration);
+  }
+
+  function setConnStatus(state, label) {
+    connDot.className = 'status-dot ' + (state || '');
+    connLabel.textContent = label;
+  }
+
+  function setTtsStatus(status) {
+    const map = {
+      'INIT':       ['', 'Đang khởi động...'],
+      'LOADING':    ['busy', 'Đang tải model...'],
+      'READY':      ['ready', 'Sẵn sàng'],
+      'PROCESSING': ['busy', 'Đang xử lý...'],
+      'SPEAKING':   ['busy', 'Đang đọc...'],
+      'DONE':       ['ready', 'Hoàn tất'],
+      'DISABLED':   ['disabled', 'Tắt (không có API key)'],
+      'ERROR':      ['error', 'Lỗi'],
+    };
+    const [cls, lbl] = map[status] || ['', status];
+    ttsDot.className = cls;
+    ttsLabel.textContent = lbl;
+  }
+
+  function addWordChip(word, isNew = false) {
+    if (wordsList.querySelector('.placeholder-text')) {
+      wordsList.innerHTML = '';
+    }
+    const chip = document.createElement('div');
+    chip.className = 'word-chip' + (isNew ? ' new' : '');
+    chip.textContent = word;
+    wordsList.appendChild(chip);
+    if (isNew) setTimeout(() => chip.classList.remove('new'), 400);
+  }
+
+  function resetUI() {
+    wordsList.innerHTML = '<span class="placeholder-text" style="font-size:12px;color:var(--text-muted);font-family:var(--mono)">Chưa có từ nào...</span>';
+    sentenceBox.textContent = 'Câu sẽ xuất hiện ở đây sau khi phân tích xong...';
+    sentenceBox.className = 'placeholder';
+    progressFill.style.width = '0%';
+    fpsBadge.style.display = 'none';
+    wordOverlay.style.display = 'none';
+    const gesturingBadge = document.getElementById('gesturing-badge');
+    if (gesturingBadge) gesturingBadge.style.display = 'none';
+    videoFrame.style.display = 'none';
+    videoPlaceholder.style.display = 'flex';
+    poseDot.className = 'dot';
+    handDot.className = 'dot';
+    frameCounter.textContent = 'Khung: —';
+    statFps.textContent = '—';
+    statConf.textContent = '—';
+    statModel.textContent = '—';
+    statHand.textContent = '—';
+    statPose.textContent = '—';
+    statGender.textContent = '—';
+    wordCount = 0;
+  }
+
+  // ── Groq toggle ───────────────────────────────────────────────────────────
+  groqToggle.addEventListener('click', () => {
+    useGroq = !useGroq;
+    groqToggle.classList.toggle('on', useGroq);
+  });
+
+  // ── File drop / select ────────────────────────────────────────────────────
+  dropZone.addEventListener('dragover', e => { e.preventDefault(); dropZone.classList.add('drag-over'); });
+  dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
+  dropZone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropZone.classList.remove('drag-over');
+    const file = e.dataTransfer.files[0];
+    if (file) handleFile(file);
+  });
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files[0]) handleFile(fileInput.files[0]);
+  });
+
+  async function handleFile(file) {
+    fileName.textContent = file.name;
+    btnStart.disabled = true;
+    btnStart.textContent = 'Đang tải lên...';
+    setConnStatus('', 'Đang tải lên...');
+
+    const form = new FormData();
+    form.append('file', file);
+
+    try {
+      const res = await fetch('/upload', { method: 'POST', body: form });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
+      sessionId = data.session_id;
+      showToast(`✓ Đã tải lên <span class="toast-accent">${data.filename}</span> (${data.size_mb} MB)`);
+      btnStart.disabled = false;
+      btnStart.textContent = 'Bắt đầu phân tích';
+      setConnStatus('', 'Sẵn sàng');
+    } catch (err) {
+      showToast('❌ Tải lên thất bại: ' + err.message);
+      btnStart.textContent = 'Bắt đầu phân tích';
+      setConnStatus('error', 'Lỗi tải lên');
+    }
+  }
+
+  // ── Start processing ──────────────────────────────────────────────────────
+  btnStart.addEventListener('click', async () => {
+    if (!sessionId || processing) return;
+
+    processing = true;
+    resetUI();
+    btnStart.disabled = true;
+    btnStart.textContent = 'Đang phân tích...';
+    btnStop.style.display = 'block';
+    setConnStatus('active', 'Đang xử lý...');
+    setTtsStatus('INIT');
+
+    // Connect WebSocket first
+    connectWebSocket(() => {
+      // Then start processing
+      fetch(`/start/${sessionId}?use_groq=${useGroq}`, { method: 'POST' })
+        .catch(e => showToast('❌ ' + e.message));
+    });
+  });
+
+  // ── Stop ──────────────────────────────────────────────────────────────────
+  btnStop.addEventListener('click', async () => {
+    if (sessionId) {
+      await fetch(`/stop/${sessionId}`, { method: 'POST' }).catch(() => {});
+    }
+    finishSession('Đã dừng');
+  });
+
+  function finishSession(label) {
+    processing = false;
+    btnStart.disabled = false;
+    btnStart.textContent = 'Bắt đầu lại';
+    btnStop.style.display = 'none';
+    setConnStatus('', label || 'Hoàn thành');
+    if (ws) { ws.close(); ws = null; }
+  }
+
+  // ── WebSocket ─────────────────────────────────────────────────────────────
+  function connectWebSocket(onOpen) {
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    ws = new WebSocket(`${proto}://${location.host}/ws/${sessionId}`);
+
+    ws.onopen = () => {
+      if (onOpen) onOpen();
+    };
+
+    ws.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      handleEvent(msg.event, msg.data);
+    };
+
+    ws.onerror = () => setConnStatus('error', 'Lỗi kết nối');
+    ws.onclose = () => {
+      if (processing) setConnStatus('', 'Mất kết nối');
+    };
+  }
+
+  // ── Event handlers ────────────────────────────────────────────────────────
+  function handleEvent(event, data) {
+    switch (event) {
+
+      case 'status':
+        setConnStatus('active', data.message);
+        break;
+
+      case 'frame': {
+        // Show video
+        videoFrame.src = 'data:image/jpeg;base64,' + data.image;
+        if (videoFrame.style.display === 'none') {
+          videoFrame.style.display = 'block';
+          videoPlaceholder.style.display = 'none';
+          fpsBadge.style.display = 'block';
+        }
+
+        // FPS badge
+        fpsBadge.textContent = `${data.fps} FPS`;
+
+        // Progress
+        progressFill.style.width = data.progress + '%';
+
+        // Frame counter
+        if (data.total_frames > 0) {
+          frameCounter.textContent = `Khung: ${data.frame_count}/${data.total_frames}`;
+        } else {
+          frameCounter.textContent = `Khung: ${data.frame_count}`;
+        }
+
+        // Current word overlay
+        if (data.word) {
+          wordOverlay.style.display = 'block';
+          wordOverlay.textContent = `${data.word}  ${data.confidence}%`;
+        } else {
+          wordOverlay.style.display = 'none';
+        }
+
+        // Indicators
+        poseDot.className = 'dot ' + (data.pose_detected ? 'active' : 'inactive');
+        handDot.className = 'dot ' + (data.hand_detected ? 'active' : 'inactive');
+
+        // Gesturing badge (#8)
+        const gesturingBadge = document.getElementById('gesturing-badge');
+        if (gesturingBadge) {
+          gesturingBadge.style.display = data.is_gesturing ? 'block' : 'none';
+        }
+
+        // Stats
+        statFps.textContent = data.fps;
+        statConf.textContent = data.confidence || '—';
+        statModel.textContent = data.model_ms;
+        statHand.textContent = data.hand_ms;
+        statPose.textContent = data.pose_ms;
+
+        if (data.gender && data.gender !== 'unknown') {
+          const map = { male: 'Nam', female: 'Nữ' };
+          statGender.textContent = map[data.gender] || data.gender;
+        }
+
+        break;
+      }
+
+      case 'word_detected': {
+        // Clear placeholder
+        const ph = wordsList.querySelector('.placeholder-text');
+        if (ph) wordsList.innerHTML = '';
+
+        wordCount++;
+        addWordChip(data.word_display, true);
+
+        // Live sentence preview
+        if (data.sentence) {
+          sentenceBox.textContent = data.sentence;
+          sentenceBox.className = 'updated';
+          setTimeout(() => sentenceBox.classList.remove('updated'), 600);
+        }
+        break;
+      }
+
+      case 'tts_status':
+        setTtsStatus(data.status);
+        break;
+
+      case 'done': {
+        progressFill.style.width = '100%';
+        setConnStatus('', 'Hoàn thành');
+
+        if (data.sentence) {
+          sentenceBox.textContent = data.sentence;
+          sentenceBox.className = 'updated';
+        } else if (data.words_detected && data.words_detected.length > 0) {
+          sentenceBox.textContent = data.words_detected.join(' ');
+          sentenceBox.className = '';
+        }
+
+        showToast(`✓ Xong! Nhận diện được <span class="toast-accent">${data.words_detected ? data.words_detected.length : 0}</span> từ`);
+        finishSession('Hoàn thành');
+        setTtsStatus('DONE');
+        break;
+      }
+
+      case 'error':
+        showToast('❌ Lỗi: ' + data.message, 5000);
+        setConnStatus('error', 'Lỗi');
+        finishSession('Lỗi');
+        break;
+    }
+  }
+
+  // ── Copy ─────────────────────────────────────────────────────────────────
+  btnCopy.addEventListener('click', () => {
+    const text = sentenceBox.textContent;
+    if (!text || sentenceBox.classList.contains('placeholder')) return;
+    navigator.clipboard.writeText(text).then(() => {
+      btnCopy.textContent = 'Đã sao chép!';
+      setTimeout(() => btnCopy.textContent = 'Sao chép', 2000);
+    });
+  });
+
+  // ── Reset ─────────────────────────────────────────────────────────────────
+  btnReset.addEventListener('click', () => {
+    if (processing) return;
+    resetUI();
+    sessionId = null;
+    fileName.textContent = '—';
+    btnStart.disabled = true;
+    btnStart.textContent = 'Bắt đầu phân tích';
+    fileInput.value = '';
+    setConnStatus('', 'Chờ video');
+    setTtsStatus('INIT');
+  });
+</script>
+</body>
+</html>

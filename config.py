@@ -9,7 +9,7 @@ load_dotenv()
 
 class Config:
     MODEL_PATH = 'models/ViSignRe.tflite'
-    VIDEO_PATH = '0'
+    VIDEO_PATH = 'data/test_video.mp4'
     OUTPUT_TXT = 'result.txt'
     FONT_PATH = 'arial.ttf'
 
@@ -74,7 +74,7 @@ class Config:
     GESTURE_WINDOW_INDEX = 0
     HAND_WRIST_INDEX = 0
     FACE_REGION_INDICES = list(range(11))
-    FACE_ROI_MARGIN_RATIO = 0.2
+    FACE_ROI_MARGIN_RATIO = 1.0
 
     @classmethod
     def display(cls, label: str) -> str:

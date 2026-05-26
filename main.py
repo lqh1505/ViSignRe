@@ -1,9 +1,13 @@
-"""ViSignRe runtime: video capture, recognition, and optional LLM/TTS post-processing."""
+"""ViSignRe runtime: video capture, recognition, and asynchronous LLM/TTS post-processing."""
 
 import os
 import sys
 import warnings
 import threading
+import queue
+from dotenv import load_dotenv
+
+load_dotenv()
 
 _ROOT = os.path.abspath(os.path.dirname(__file__))
 if _ROOT not in sys.path:
@@ -46,13 +50,76 @@ with SuppressStderr():
     from src.core.keypoint_utils import extract_keypoints
     from src.core.mediapipe_handlers import HandDetector, PoseDetector
     from src.processors.video_processor import VideoProcessor
-    from src.processors.groq_processor import GroqProcessor
     from src.processors.gender_detector import GenderDetector
     from src.ui.renderers import VietnameseRenderer, draw_confidence_bars
     from src.utils.utils import FPSCounter, C_GREEN, C_RED, C_YELLOW, C_GRAY, C_WHITE
-    from src.processors.tts_processor import speak_dynamic
 
 dev_info = {'tf_version': tf.__version__}
+
+
+# =============================================================================
+# ASYNCHRONOUS TTS WORKER (Chạy song song)
+# =============================================================================
+_tts_queue = queue.Queue()
+_tts_state = {"ready": False, "status": "TTS: INIT", "color": C_GRAY}
+
+def _tts_worker():
+    """Luồng ngầm chuyên load mô hình nặng và phát âm thanh"""
+    try:
+        _tts_state["status"] = "TTS: LOADING"
+        _tts_state["color"] = C_YELLOW
+        # Chỉ load 2 module này khi luồng phụ đã khởi chạy
+        from src.processors.groq_processor import GroqProcessor
+        from src.processors.tts_processor import speak_dynamic
+
+        groq_processor = GroqProcessor()
+        _tts_state["ready"] = True
+        _tts_state["status"] = "TTS: READY"
+        _tts_state["color"] = C_GREEN
+        logging.info("Background TTS worker: initialized successfully")
+    except Exception as e:
+        _tts_state["status"] = "TTS: ERROR"
+        _tts_state["color"] = C_RED
+        logging.warning("Background TTS worker: disabled (%s)", e)
+        return
+
+    while True:
+        task = _tts_queue.get()
+        if task is None:
+            break
+
+        sentence, current_gender, save_callback = task
+        if not sentence:
+            _tts_queue.task_done()
+            continue
+
+        try:
+            _tts_state["status"] = "TTS: SPEAKING"
+            _tts_state["color"] = C_YELLOW
+            result_text = Config.display_sentence(sentence)
+
+            final_enhanced = groq_processor.generate_sentence(sentence)
+            final_result = final_enhanced.get('sentence', result_text)
+            explanation = final_enhanced.get('explanation')
+            tone_params = final_enhanced.get('params', {})
+            final_gender = current_gender if current_gender else tone_params.get('gender', 'nu')
+
+            logging.info("LLM output: %s", final_result)
+            if explanation:
+                logging.info("LLM note: %s", explanation)
+            logging.info("TTS gender: %s", final_gender.upper())
+            
+            speak_dynamic(final_result, tone_params, gender=final_gender)
+            
+            if save_callback:
+                save_callback(final_result)
+
+        except Exception as e:
+            logging.error("Post-processing failed: %s", e)
+        finally:
+            _tts_state["status"] = "TTS: READY"
+            _tts_state["color"] = C_GREEN
+            _tts_queue.task_done()
 
 
 class DummyTensor:
@@ -91,6 +158,10 @@ def main():
     print("\n" + "=" * 60)
     print(" ViSignRe | Initializing")
     print("=" * 60 + "\n")
+
+    # 1. Khởi động luồng TTS song song ngay lập tức
+    tts_thread = threading.Thread(target=_tts_worker, daemon=True)
+    tts_thread.start()
 
     logging.info("TensorFlow %s", dev_info['tf_version'])
     logging.info("Execution mode: TFLite CPU")
@@ -138,13 +209,6 @@ def main():
         gesture_recognizer = GestureRecognizer()
         fps_counter = FPSCounter()
 
-        groq_processor = None
-        try:
-            groq_processor = GroqProcessor()
-            logging.info("Groq service: connected")
-        except ValueError as e:
-            logging.warning("Groq service: disabled (%s)", e)
-
     except Exception as e:
         logging.error("Component initialization failed: %s", e)
         sys.exit(1)
@@ -161,7 +225,7 @@ def main():
     _pose_skip = 0
 
     print("\n[INFO] Stream started")
-    print("[INFO] Keys: Q = quit, F = flip video\n")
+    print("[INFO] Keys: Q = Quit, F = Flip video, S/Enter = Trigger Speech\n")
 
     try:
         while video_processor.is_open():
@@ -214,7 +278,9 @@ def main():
 
             _t_pose += _time.perf_counter() - _t0
             _t0 = _time.perf_counter()
+            
             hand_results = hand_detector.process(image_rgb)
+            
             kp, hand_detected = extract_keypoints(
                 hand_results.multi_hand_landmarks,
                 hand_results.multi_handedness or [],
@@ -246,9 +312,7 @@ def main():
                 finalized_word = result['finalized_word']
                 if finalized_word:
                     sentence.append(finalized_word)
-                    print(
-                        f"[DETECT] {finalized_word} -> {Config.display(finalized_word)}"
-                    )
+                    logging.info("Detected: %s", finalized_word)
                 gesture_recognizer.reset_gesture()
 
             if len(predictions) > 0:
@@ -274,6 +338,9 @@ def main():
                     (f"Observing: {Config.display(current_top)}", (16, 48), C_YELLOW, 'sm')
                 )
 
+            # Vẽ trạng thái của luồng TTS song song lên màn hình
+            texts_to_draw.append((_tts_state["status"], (w - 180, h - 30), _tts_state["color"], 'sm'))
+
             sentence_display = Config.display_sentence(sentence) if sentence else '...'
             texts_to_draw.append((sentence_display, (16, h - 52), C_WHITE, 'lg'))
 
@@ -286,11 +353,19 @@ def main():
 
             cv2.imshow(Config.WINDOW_NAME, frame)
 
+            # 3. Điều khiển bằng phím S hoặc Enter để ném câu sang luồng âm thanh
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):
                 break
             if key == ord('f'):
                 flip_video = not flip_video
+            if key == ord('s') or key == 13:
+                if _tts_state["ready"] and sentence:
+                    logging.info("Triggering speech for current sentence...")
+                    _tts_queue.put((list(sentence), current_gender, video_processor.save_result))
+                    sentence.clear()
+                elif not _tts_state["ready"]:
+                    logging.warning("TTS is not ready yet.")
 
     except KeyboardInterrupt:
         print("\n[INFO] Interrupted")
@@ -314,39 +389,17 @@ def main():
             pose_detector.close()
         cv2.destroyAllWindows()
 
-        result_text = (
-            Config.display_sentence(sentence) if sentence else "No output generated"
-        )
-
-        if groq_processor and sentence:
-            def process_ai_and_speak():
-                final_result = result_text
-                try:
-                    final_enhanced = groq_processor.generate_sentence(sentence)
-                    final_result = final_enhanced.get('sentence', result_text)
-                    explanation = final_enhanced.get('explanation')
-                    tone_params = final_enhanced.get('params', {})
-                    final_gender = tone_params.get('gender', current_gender or "nam")
-
-                    logging.info("LLM output: %s", final_result)
-                    if explanation:
-                        logging.info("LLM note: %s", explanation)
-                    logging.info("TTS gender: %s", final_gender.upper())
-
-                    speak_dynamic(final_result, tone_params, gender=final_gender)
-                except Exception as e:
-                    logging.error("Post-processing failed: %s", e)
-                finally:
-                    print(f"\n[RESULT] {final_result}\n")
-                    video_processor.save_result(final_result)
-
-            ai_thread = threading.Thread(target=process_ai_and_speak)
-            ai_thread.start()
-            ai_thread.join()
-        else:
-            print(f"[RESULT] {result_text}\n")
-            video_processor.save_result(result_text)
-
+        # 4. Khi thoát, báo luồng phụ nói nốt rồi đợi nó hoàn thành (đã xóa timeout=3.0)
+        if sentence and _tts_state["ready"]:
+            logging.info("Flushing final sentence to TTS before exit...")
+            _tts_queue.put((list(sentence), current_gender, video_processor.save_result))
+            
+        _tts_queue.put(None)
+        if tts_thread.is_alive():
+            logging.info("Đang đợi TTS hoàn tất phát câu nói cuối cùng...")
+            tts_thread.join()
+            
+        logging.info("Shutdown complete.")
 
 if __name__ == '__main__':
     main()

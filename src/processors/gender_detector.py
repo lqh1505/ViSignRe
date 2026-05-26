@@ -22,11 +22,11 @@ class GenderDetector:
             logging.warning("Gender model not found; defaulting to male voice")
 
         self.MODEL_MEAN_VALUES = (78.4263377603, 87.7689143744, 114.895847746)
-        self.GENDER_LIST = ['nam', 'nu']
+        self.GENDER_LIST = ['male', 'female']
 
     def detect(self, face_img):
         if self.net is None or face_img is None or face_img.size == 0:
-            return "nam"
+            return "male"
 
         try:
             blob = cv2.dnn.blobFromImage(
@@ -37,4 +37,4 @@ class GenderDetector:
             return self.GENDER_LIST[preds[0].argmax()]
         except Exception as e:
             logging.error("Gender detection failed: %s", e)
-            return "nam"
+            return "male"

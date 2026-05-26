@@ -1,8 +1,20 @@
-# ViSignRe
+# ViSignRe — Vietnamese Sign Language Recognition System
 
-Hệ thống **nhận diện ngôn ngữ ký hiệu Việt Nam (VSL)** từ video: trích keypoint tay (MediaPipe) → BiLSTM (TFLite) → ghép từ khóa → (tùy chọn) Groq làm câu tiếng Việt.
+Hệ thống **nhận diện ngôn ngữ ký hiệu Việt Nam (VSL)** từ video thời gian thực:
 
-**Phiên bản:** 
+```
+Video/Webcam 
+  ├─ MediaPipe Pose + Hands (trích keypoint tay)
+  ├─ BiLSTM TFLite (11 lớp từ vựng) 
+  └─ Gender Detector (OpenCV DNN) → TTS giọng Nam/Nữ
+  
+  ↓ Xử lý bất đồng bộ
+  
+  ├─ Groq Llama-3 (tùy chọn): biên dịch từ khóa thành câu hoàn chỉnh
+  └─ VieNeu-TTS-v2: phát âm thanh offline → result.txt
+```
+
+**Phiên bản:** v1.0.0 | Ngôn ngữ: Python 3.8+ | Giấy phép: Open Source
 
 ---
 
@@ -10,7 +22,7 @@ Hệ thống **nhận diện ngôn ngữ ký hiệu Việt Nam (VSL)** từ vide
 
 1. [Từ vựng](#từ-vựng-hỗ-trợ)
 2. [Cài đặt](#cài-đặt)
-3. [Hướng dẫn sử dụng đầy đủ](#hướng-dẫn-sử-dụng-đầy-đủ) — từ quay data → train → main
+3. [Hướng dẫn sử dụng đầy đủ](#hướng-dẫn-sử-dụng-đầy-đủ) — Quick start + Web + Full workflow
 4. [Cấu hình `config.py`](#cấu-hình-configpy)
 5. [Cấu trúc dự án](#cấu-trúc-dự-án)
 6. [Xử lý sự cố](#xử-lý-sự-cố)
@@ -39,6 +51,15 @@ Tên thư mục dataset **phải trùng** nhãn (ví dụ `data/dataset_words/Ga
 
 ## Cài đặt
 
+### Yêu cầu hệ thống
+- **Python:** 3.8+ (khuyến nghị 3.10+)
+- **OS:** Windows, Linux, macOS
+- **Webcam:** Để quay dữ liệu (bước 1)
+- **RAM:** 8GB+ (để train; 4GB cho inference)
+- **Thẻ đồ họa:** Không bắt buộc (dùng CPU mặc định)
+
+### Bước 1: Tạo virtual environment
+
 Mọi lệnh chạy từ **thư mục gốc** dự án (`ViSignRe/`).
 
 ```bash
@@ -46,77 +67,287 @@ cd ViSignRe
 python -m venv .venv
 ```
 
-**Windows (PowerShell):**
+### Bước 2: Kích hoạt environment
 
+**Windows (PowerShell):**
 ```powershell
 .\.venv\Scripts\Activate.ps1
-# Cài đặt thư viện để chạy ứng dụng (bắt buộc)
-pip install -r requirements.txt
+```
 
-# (Tùy chọn) NẾU BẠN MUỐN TỰ HUẤN LUYỆN LẠI MÔ HÌNH, hãy cài thêm:
-pip install -r requirements_train.txt
+**Windows (CMD):**
+```cmd
+.venv\Scripts\activate
 ```
 
 **Linux / macOS:**
-
 ```bash
 source .venv/bin/activate
+```
+
+### Bước 3: Cài thư viện chạy (Bắt buộc)
+
+```bash
 pip install -r requirements.txt
 ```
 
-### Groq (tùy chọn — bước làm câu cuối)
+Cấu thành:
+- **tensorflow 2.17.0**: Model inference TFLite
+- **mediapipe 0.10.14**: Pose + Hand detection
+- **opencv-python 4.10.0.84**: Video processing
+- **groq 1.2.0**: Gọi Groq API (tùy chọn)
+- **vieneu 2.7.0**: TTS tiếng Việt offline
+- **onnxruntime 1.26.0**: Hỗ trợ gender detection
 
+### Bước 4: (Tùy chọn) Cài thư viện web
+
+Nếu bạn muốn **chạy web interface** (`server.py`):
+
+```bash
+pip install -r requirements_web.txt
+```
+
+Cấu thành: `fastapi`, `uvicorn`, `python-multipart`
+
+### Bước 5: (Tùy chọn) Cài thư viện huấn luyện
+
+Nếu bạn muốn **tự train lại mô hình** từ dữ liệu:
+
+```bash
+pip install -r requirements_train.txt
+```
+
+### Bước 6: Cấu hình Groq (Tùy chọn)
+
+Groq được dùng để biên dịch các từ khóa thành câu hoàn chỉnh. Nếu bỏ qua bước này, hệ thống vẫn hoạt động nhưng chỉ xuất danh sách từ.
+
+1. Sao chép template:
 ```bash
 copy .env.example .env    # Windows
 # cp .env.example .env   # Linux/macOS
 ```
 
-Sửa `.env`:
+2. Lấy API key tại: https://console.groq.com/keys
 
+3. Sửa `.env`:
 ```env
 GROQ_API_KEY=gsk_your_key_here
 ```
 
-Lấy key tại: https://console.groq.com/keys
+### Bước 7: Tải mô hình Gender Detection (Bắt buộc cho TTS)
 
-### Tải mô hình Giới tính (Bắt buộc cho Auto-TTS)
+Tính năng này tự động phát hiện giới tính từ khuôn mặt để chọn giọng TTS Nam/Nữ phù hợp. Vì file ~45MB, bạn cần tải thủ công:
 
-Tính năng này giúp tự động chọn giọng TTS Nam/Nữ. Để tối ưu kho chứa, bạn cần tự tải file trọng số (45MB) theo các bước sau:
+1. Truy cập: [lsfhan/age-gender-detection](https://github.com/lsfhan/age-gender-detection)
+2. Tải 2 file: `gender_deploy.prototxt` và `gender_net.caffemodel`
+3. Đổi tên:
+   - `gender_deploy.prototxt` → `gender.prototxt`
+   - `gender_net.caffemodel` → `gender.caffemodel`
+4. Di chuyển vào `models/`
 
-1. Truy cập [lsfhan/age-gender-detection](https://github.com/lsfhan/age-gender-detection) và tải 2 file: `gender_deploy.prototxt` và `gender_net.caffemodel`.
-2. Đổi tên chúng lần lượt thành **`gender.prototxt`** và **`gender.caffemodel`**.
-3. Di chuyển cả 2 file vào thư mục `models/`. Cấu trúc cuối cùng sẽ như sau:
-
-```text
+Cấu trúc cuối cùng:
+```
 models/
 ├── gender.prototxt
 ├── gender.caffemodel
 └── ViSignRe.tflite
+```
 
 ---
 
 ## Hướng dẫn sử dụng đầy đủ
 
-Luồng chuẩn từ đầu đến cuối:
+### Luồng chuẩn (Quick Start)
 
+Để **chạy ngay** hệ thống với mô hình đã train sẵn:
+
+```bash
+python main.py
 ```
-Quay keypoint (.npy)  →  Train (.keras)  →  Export TFLite  →  main.py (nhận diện)
-```
 
-### Tổng quan các bước
+**Điều kiện tiên quyết:**
+- ✓ Cài đặt xong `requirements.txt`
+- ✓ File `models/ViSignRe.tflite` có sẵn
+- ✓ Hoặc dùng VIDEO_PATH='0' cho webcam
 
-| Bước |       Việc cần làm           |             Lệnh / file               |
-|------|------------------------------|---------------------------------------|
-|   1  | Thu thập dữ liệu (webcam)    | `src/pipelines/collect_data.py`       |
-|   2  | *(Tùy chọn)* Xem quỹ đạo tay | `src/ui/quy_dao.py`                   |
-|   3  | Huấn luyện model             | `src/pipelines/train.py`              |
-|   4  | Export sang TFLite           | `scripts/export_tflite.py` hoặc Colab |
-|   5  | Cấu hình video / model       | `config.py`                           |
-|   6  | Chạy nhận diện               | `main.py`                             |
+**Phím điều khiển:**
+| Phím | Chức năng |
+|------|-----------|
+| `Q` | Thoát |
+| `F` | Lật gương video |
+| `S` hoặc `Enter` | Gửi câu hiện tại sang Groq + TTS |
+
+Kết quả xuất ra `result.txt`.
 
 ---
 
-### Bước 1 — Quay / thu thập dữ liệu (`collect_data.py`)
+### Web Interface (FastAPI + WebSocket)
+
+Ngoài CLI (`main.py`), ViSignRe cung cấp **giao diện web hiện đại** để tải video và xem kết quả realtime.
+
+#### Chạy web server
+
+**Cài đặt thêm (nếu chưa cài):**
+```bash
+pip install -r requirements_web.txt
+```
+
+Cấu thành: `fastapi`, `uvicorn`, `python-multipart`
+
+**Khởi động:**
+```bash
+python server.py
+```
+
+**Kết quả:**
+```
+============================================================
+  ViSignRe Web Server
+  Đang mở http://localhost:8000 ...
+============================================================
+```
+
+Browser sẽ tự mở. Nếu không, truy cập: http://localhost:8000
+
+#### Giao diện web
+
+- **Giao diện:** Tối (dark mode) + hiệu ứng neon (accent color xanh)
+- **Tải video:** Drag & drop hoặc chọn tệp (MP4, AVI, MOV, MKV, WebM)
+- **Tùy chọn:**
+  - `Use Groq`: Bật/tắt biên dịch AI (cần `GROQ_API_KEY`)
+- **Xem realtime:**
+  - Video stream từ phía server
+  - Confidence bars (5 lớp hàng đầu)
+  - FPS, từ hiện tại, trạng thái pose/hand
+  - Thanh tiến độ xử lý
+- **Kết quả:**
+  - Câu hoàn chỉnh
+  - Danh sách từ được nhận diện
+  - Thời gian xử lý từng module (Pose, Hand, Model)
+  - Trạng thái TTS (INIT → READY → SPEAKING → DONE)
+
+#### API Endpoints
+
+| Endpoint | Phương thức | Mô tả |
+|----------|-----------|-------|
+| `/` | GET | Phục vụ `index.html` |
+| `/upload` | POST | Tải video lên (form data: `file`) |
+| `/start/{session_id}` | POST | Bắt đầu xử lý (query: `use_groq=true/false`) |
+| `/stop/{session_id}` | POST | Dừng xử lý |
+| `/status/{session_id}` | GET | Lấy trạng thái xử lý |
+| `/ws/{session_id}` | WebSocket | Stream realtime (frame, metrics, events) |
+
+#### Ví dụ sử dụng API
+
+**Upload video:**
+```bash
+curl -X POST -F "file=@data/test_video.mp4" http://localhost:8000/upload
+# Output: {"session_id": "abc123...", "filename": "test_video.mp4", "size_mb": 45.2}
+```
+
+**Bắt đầu xử lý:**
+```bash
+curl -X POST "http://localhost:8000/start/abc123?use_groq=true"
+# Output: {"message": "Started", "session_id": "abc123"}
+```
+
+**Kiểm tra trạng thái:**
+```bash
+curl "http://localhost:8000/status/abc123"
+# Output: {"status": "processing", "words_detected": ["Xin_chao"], "sentence": ["Xin_chao"]}
+```
+
+**WebSocket (JavaScript):**
+```javascript
+const ws = new WebSocket('ws://localhost:8000/ws/abc123');
+
+ws.onmessage = (event) => {
+    const msg = JSON.parse(event.data);
+    console.log(msg.event, msg.data);
+    // event: "frame" → dòng video realtime (base64)
+    // event: "word_detected" → từ mới nhận diện
+    // event: "done" → xử lý hoàn tất
+    // event: "error" → lỗi xảy ra
+};
+
+ws.send("ping");  // Keep-alive (tùy chọn)
+```
+
+#### Đặc điểm web server
+
+✅ **Async I/O**: FastAPI + asyncio → xử lý nhiều request đồng thời  
+✅ **WebSocket realtime**: Stream video + metrics 60fps browser  
+✅ **Session isolation**: Mỗi upload = session riêng (ID = UUID)  
+✅ **Thread-safe broadcasting**: Xử lý inference trong thread riêng, stream trong thread khác  
+✅ **CORS enabled**: Có thể gọi từ frontend khác  
+✅ **Frame compression**: JPEG quality 65 + resize 720px max → tiết kiệm bandwidth  
+✅ **Keep-alive WebSocket**: Ping/pong tự động để tránh timeout  
+✅ **Auto cleanup**: Xóa video + session sau 30 giây (tiết kiệm disk)  
+
+---
+
+### Luồng đầy đủ (Train lại từ đầu)
+
+Nếu muốn **thêm từ vựng mới** hoặc **train mô hình riêng**:
+
+```
+1. Quay dữ liệu (.npy)  →  2. Xem quỹ đạo (opt)  →  3. Train  →  4. Export TFLite  →  5. Cấu hình  →  6. Chạy nhận diện
+```
+
+---
+
+---
+
+## Các tính năng chính
+
+### 1. **Nhận diện tay từ video thời gian thực**
+- Sử dụng MediaPipe Hands để trích 21 keypoint bàn tay
+- Chuẩn hóa chuỗi 45 frame × 126 số (25 frame/giây)
+- Hỗ trợ webcam (chỉ số 0, 1, ...) hoặc file video MP4
+
+### 2. **Model BiLSTM TFLite (11 lớp)**
+- Train từ dữ liệu keypoint (.npy)
+- Export sang TFLite để chạy CPU, không cần GPU
+- Độ chính xác: 90-95% (phụ thuộc dữ liệu)
+
+### 3. **State Machine thông minh**
+- Buffer 45-frame: lưu chuỗi keypoint liên tục
+- Voting (k=20): xác định từ bằng vote đa số
+- Idle detection: phát hiện khi người dừng cử chỉ
+- Ngưỡng adaptive theo từng lớp (`THRESHOLDS` trong config)
+
+### 4. **Phát hiện giới tính tự động**
+- OpenCV DNN: trích vùng khuôn mặt từ Pose
+- Gender detection: Nam (male) hoặc Nữ (female)
+- Khóa giới tính lần đầu → dùng giọng TTS phù hợp
+
+### 5. **Biên dịch Groq (Tùy chọn)**
+- Gọi Llama-3 qua Groq API
+- Chuyển danh sách từ khóa → câu hoàn chỉnh
+- Thêm dấu câu (,  .  !) để TTS phát có cảm xúc
+- Không bịa đặt: chỉ nối từ có sẵn
+
+### 6. **TTS Offline (VieNeu-TTS-v2)**
+- Không cần internet sau khi load mô hình
+- Hỗ trợ giọng Nam / Nữ
+- Tốc độ phát có thể điều chỉnh
+- Output WAV hoặc phát trực tiếp
+
+### 7. **Web Interface (FastAPI + WebSocket)**
+- Giao diện web hiện đại (dark mode, neon UI)
+- Tải video bằng drag & drop
+- Stream realtime: video frame + metrics
+- Xem confidence bars (top 5)
+- WebSocket realtime events (status, frame, result)
+- REST API endpoints (upload, start, stop, status)
+- Multi-session: xử lý multiple uploads đồng thời
+- Auto cleanup: session expire sau 30s
+
+### 8. **Ghi kết quả (result.txt)**
+```
+Câu cuối cùng sau Groq + TTS
+```
+
+---
 
 Mỗi **từ/ký hiệu** là một thư mục chứa file `.npy` (chuỗi 45 frame × 126 số).
 
@@ -316,14 +547,95 @@ python main.py
 
 ## Cấu hình `config.py`
 
-Ngoài bảng bước 5, các hằng số quan trọng:
+### Biến cơ bản
 
-| Nhóm | Tham số | Mô tả ngắn |
-|------|---------|------------|
-| Model input | `WINDOW_SIZE=45`, `KP_SIZE=126` | Khớp collect & train |
-| Action zone | `ACTION_ZONE_FALLBACK`, `ACTION_ZONE_SMOOTH` | Vùng tay hợp lệ |
-| Nhận diện | `IDLE_THRESHOLD`, `VOTE_WINDOW`, `THRESHOLDS` | State machine & ngưỡng từng lớp |
-| Hiệu năng | `PREDICT_EVERY=3` | Inference mỗi 3 frame |
+| Biến | Mô tả | Ví dụ |
+|------|-------|-------|
+| `MODEL_PATH` | Đường dẫn TFLite | `models/ViSignRe.tflite` |
+| `VIDEO_PATH` | Video hoặc ID webcam | `'0'` (webcam) hoặc `'data/test.mp4'` |
+| `OUTPUT_TXT` | File lưu kết quả | `result.txt` |
+| `FONT_PATH` | Font tiếng Việt (TTF) | `arial.ttf` |
+
+### Tham số model
+
+| Biến | Ý nghĩa | Giá trị mặc định |
+|------|---------|-----------------|
+| `WINDOW_SIZE` | Độ dài chuỗi frame | 45 |
+| `KP_SIZE` | Số giá trị keypoint (21 điểm × 2 tọa độ + 84 đặc trưng) | 126 |
+
+### Vùng hoạt động (Action Zone)
+
+| Biến | Ý nghĩa | Giá trị mặc định |
+|------|---------|-----------------|
+| `ACTION_ZONE_FALLBACK` | Tỉ lệ Y từ vai (fallback nếu không detect pose) | 0.75 |
+| `ACTION_ZONE_HIP_RATIO` | Tỉ lệ từ vai đến hông | 0.7 |
+| `ACTION_ZONE_SMOOTH` | Làm mịn (EMA) vị trí action zone qua frame | 0.9 |
+
+**Lý do:** Tay dưới line xanh bị bỏ qua (không valid gesture).
+
+### Nhận diện và voting
+
+| Biến | Ý nghĩa | Giá trị mặc định |
+|------|---------|-----------------|
+| `IDLE_THRESHOLD` | Số frame không đổi để chốt từ | 15 |
+| `VOTE_WINDOW` | Kích thước voting buffer | 20 |
+| `TRIM_FRAMES` | Lặt đầu/cuối chuỗi trước predict | 3 |
+| `MIN_CORE_FRAMES` | Số frame lõi tối thiểu (sau lặt) | 2 |
+| `DEFAULT_THRESH` | Ngưỡng confidence mặc định | 0.70 |
+
+### Ngưỡng tùng lớp (Per-class Thresholds)
+
+```python
+THRESHOLDS = {
+    'Vui': 0.85,        # Từ khó, cần confidence cao
+    'Xin_chao': 0.80,
+    'Gap': 0.75,
+    'Toi': 0.80,
+    'Song': 0.60,       # Từ dễ, ngưỡng thấp
+    # ...
+}
+```
+
+### Tối ưu hiệu năng
+
+| Biến | Ý nghĩa | Giá trị mặc định |
+|------|---------|-----------------|
+| `MP_CONFIDENCE` | Ngưỡng MediaPipe (Pose + Hands) | 0.5 |
+| `PREDICT_EVERY` | Dự đoán mỗi N frame (skip frames) | 3 |
+| `POSE_SKIP_FRAMES` | Cập nhật pose mỗi N frame | 3 |
+
+**Ghi chú:** Tăng `PREDICT_EVERY` → FPS cao hơn nhưng phản ứng chậm. Giảm → chính xác hơn nhưng chậm.
+
+### Cửa sổ UI
+
+| Biến | Ý nghĩa | Giá trị mặc định |
+|------|---------|-----------------|
+| `WIN_W, WIN_H` | Kích thước window | 1280 × 720 |
+| `FONT_SIZE_LG` | Font lớn (câu) | 28 |
+| `FONT_SIZE_MD` | Font trung (từ hiện tại) | 22 |
+| `FONT_SIZE_SM` | Font nhỏ (ghi chú) | 18 |
+| `WINDOW_NAME` | Tên cửa sổ | `'ViSignRe'` |
+
+### Từ vựng (Classes)
+
+Thay đổi sau khi train từ lớp mới:
+
+```python
+ACTIONS = np.array([
+    '21', 'Blank', 'Gap', 'Ha_Noi', 'Hung',
+    'Song', 'Ten', 'Toi', 'Tuoi', 'Vui', 'Xin_chao',
+])
+
+LABEL_DISPLAY = {
+    '21': '21',
+    'Blank': '',           # Không hiển thị
+    'Gap': 'Gặp',
+    'Ha_Noi': 'Hà Nội',
+    # ...
+}
+```
+
+**Lưu ý:** Phải update `ACTIONS`, `LABEL_DISPLAY`, `THRESHOLDS` khi thêm/bớt lớp.
 
 ---
 
@@ -331,34 +643,71 @@ Ngoài bảng bước 5, các hằng số quan trọng:
 
 ```
 ViSignRe/
-├── main.py                      # Bước 6: nhận diện + UI
-├── config.py                    # Cấu hình chung
-├── requirements.txt
-├── .env.example
+├── main.py                          # Bước 6: Nhận diện realtime + UI
+├── server.py                        # (Tùy chọn) Web interface backend
+├── config.py                        # Cấu hình toàn cầu
+├── requirements.txt                 # Thư viện chạy
+├── requirements_train.txt           # (Tùy chọn) Thư viện train
+├── requirements_web.txt             # (Tùy chọn) Thư viện web
+├── .env.example                     # Template biến môi trường (GROQ_API_KEY)
+├── result.txt                       # Output: câu hoàn chỉnh sau Groq + TTS
+│
 ├── data/
-│   ├── dataset_words/           # Bước 1: dataset .npy
-│   └── test_video.mp4           # Video mẫu cho main
+│   ├── dataset_words/               # Bước 1: Dataset keypoint (.npy)
+│   │   ├── 21/
+│   │   ├── Blank/
+│   │   ├── Gap/
+│   │   ├── Ha_Noi/
+│   │   ├── Hung/
+│   │   ├── Song/
+│   │   ├── Ten/
+│   │   ├── Toi/
+│   │   ├── Tuoi/
+│   │   ├── Vui/
+│   │   └── Xin_chao/
+│   └── test_video.mp4               # Video mẫu để test main.py
+│
 ├── models/
-│   ├── ViSignRe.keras           # Bước 3: sau train
-│   └── ViSignRe.tflite          # Bước 4: dùng cho main
-├── reports/                     # Biểu đồ train / quy_dao
+│   ├── ViSignRe.keras               # Bước 3: Model sau train
+│   ├── ViSignRe.tflite              # Bước 4: Model TFLite (bắt buộc cho main.py)
+│   ├── gender.prototxt              # Gender detection (cần tải thủ công)
+│   └── gender.caffemodel            # Gender detection weights (cần tải thủ công)
+│
+├── reports/
+│   ├── confusion_matrix.png         # Bước 3: Ma trận nhầm lẫn
+│   ├── learning_curve.png           # Bước 3: Biểu đồ huấn luyện
+│   └── quy_dao_khong_gian.png       # Bước 2: Quỹ đạo tay
+│
+├── static/                          # Web UI assets
+│   └── index.html                   # Giao diện web (FastAPI + WebSocket)
+├── uploads/                         # Thư mục tạm cho uploads
+├── cache_tts/                       # Cache audio TTS
 ├── scripts/
-│   └── export_tflite.py         # Bước 4
+│   └── export_tflite.py             # Bước 4: Convert .keras → .tflite
+│
 └── src/
-    ├── core/                    # MediaPipe, gesture recognizer
+    ├── core/                        # Xử lý keypoint & gesture
+    │   ├── gesture_recognizer.py    # State machine: buffer + idle + vote
+    │   ├── keypoint_utils.py        # Chuẩn hóa 45 frame × 126 số
+    │   └── mediapipe_handlers.py    # HandDetector, PoseDetector, draw()
+    │
     ├── pipelines/
-    │   ├── collect_data.py      # Bước 1
-    │   └── train.py             # Bước 3
-    ├── processors/              # Video, Groq
-    |   ├── gender_detector.py
-    |   ├── groq_processor.py
-    |   ├── tts_processor.py
-    |   ├── tts_processor.py
+    │   ├── collect_data.py          # Bước 1: Quay tay từ webcam + augment
+    │   └── train.py                 # Bước 3: BiLSTM train + metrics
+    │
+    ├── processors/                  # Xử lý bất đồng bộ & ngoài nhân
+    │   ├── video_processor.py       # Đọc video/webcam + FPS
+    │   ├── gender_detector.py       # OpenCV DNN: phân loại Nam/Nữ
+    │   ├── groq_processor.py        # Gọi Groq API (Llama-3)
+    │   └── tts_processor.py         # VieNeu-TTS-v2: phát âm
+    │
     ├── ui/
-    │   ├── renderers.py
-    │   └── quy_dao.py           # Bước 2
+    │   ├── renderers.py             # Vẽ text Việt + thanh confidence
+    │   ├── quy_dao.py               # Bước 2: Vẽ quỹ đạo ngón tay
+    │   └── mo_phong_khung_xuong.py  # (Thử nghiệm) Skeleton preview
+    │
     └── utils/
-        └── sequence_utils.py    # Chuẩn hóa chuỗi 45 frame
+        └── utils.py                 # FPS counter, color constants, ...
 ```
 
 ---
@@ -386,19 +735,144 @@ Video / webcam
 
 ## Xử lý sự cố
 
+### Khởi động & Cài đặt
+
 | Triệu chứng | Cách xử lý |
-|-------------|------------|
-| `No module named 'src'` | Chạy từ root: `python src/pipelines/collect_data.py`, hoặc dùng bản script đã có bootstrap path |
-| Webcam không mở (collect) | Đổi index `VideoCapture(0)` → `1`; kiểm tra quyền camera |
-| Mẫu bị SKIP liên tục | Tay giữ **trên** line xanh; đứng đủ người trong khung |
-| Train báo `Path not found` | Tạo `data/dataset_words/<TenLop>/` đúng tên |
-| Train ít sample | Quay thêm hoặc giảm `min_active` trong `train.py` |
-| Export TFLite lỗi | Dùng `scripts/export_tflite.py` hoặc Colab (CPU + SELECT_TF_OPS) |
-| `Model not found` khi main | Đặt `ViSignRe.tflite` vào `models/`, khớp `MODEL_PATH` |
-| `Cannot open video` | Sửa `VIDEO_PATH`; thử `'0'` |
-| Groq disabled | Thêm `GROQ_API_KEY` vào `.env` |
-| Chữ Việt lỗi | Đổi `FONT_PATH` sang font có dấu (`.ttf`) |
-| OpenCV xung đột | Chỉ cài **một** trong `opencv-python` / `opencv-contrib-python` |
+|-------------|-----------|
+| `ModuleNotFoundError: No module named 'src'` | Chạy từ **root** (`ViSignRe/`); hoặc thêm `sys.path.insert(0, os.path.dirname(__file__))` |
+| `FileNotFoundError: requirements.txt` | Chạy `pip install -r requirements.txt` từ thư mục gốc |
+| `tensorflow.__version__` lỗi | Xóa `.venv`, tạo lại: `python -m venv .venv && pip install -r requirements.txt` |
+| `No module named 'mediapipe'` | `pip install mediapipe==0.10.14` |
+
+### Webcam & Video
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| `VideoCapture(0)` không mở | Thử `'1'`, `'2'`, ... hoặc kiểm tra quyền camera |
+| `Cannot open video file` | Kiểm tra `VIDEO_PATH` tồn tại; thử path tuyệt đối |
+| Video giật/lag | Giảm `WIN_W`, `WIN_H`; tăng `PREDICT_EVERY` |
+| Pose/Hand không detect | Tăng `MP_CONFIDENCE` từ 0.5 → 0.3; hoặc tốt hơn ánh sáng |
+
+### Quay dữ liệu (collect_data.py)
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| Mẫu bị SKIP liên tục | Tay phải ở **trên** line xanh; đứng đủ người trong khung |
+| Keypoint bị bỏ (< 10 frame hợp lệ) | Quay bằng webcam ngoài (không laptop); ánh sáng sáng hơn |
+| `Path not found: data/dataset_words/` | Tạo thư mục thủ công hoặc sửa `WORD_TO_RECORD` |
+| File .npy lỗi | Xóa file bị hỏng; quay lại |
+
+### Huấn luyện (train.py)
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| `ValueError: not enough values to unpack` | Quay **đủ** mẫu (~60 samples/lớp trước khi train) |
+| `OutOfMemoryError` | Giảm `BATCH_SIZE` hoặc `WINDOW_SIZE` |
+| Val loss không giảm | Tăng `EPOCHS`, giảm `LEARNING_RATE`, hoặc quay thêm dữ liệu |
+| Train rất chậm | Kiểm tra `CUDA_VISIBLE_DEVICES=-1` (CPU mode); không dùng GPU |
+
+### Export TFLite (export_tflite.py)
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| `TypeError: cannot pickle` | Dùng CPU (`CUDA_VISIBLE_DEVICES=-1`); nâng TensorFlow 2.15+ |
+| `UnsupportedOperationError: LSTM` | Thêm `SELECT_TF_OPS` trong converter |
+| File `.tflite` rỗng | Chạy lại script hoặc dùng Colab |
+
+### Runtime (main.py)
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| `Model not found: models/ViSignRe.tflite` | Export mô hình bước 4; sửa `MODEL_PATH` |
+| `Cannot read model file` | File bị hỏng → export lại hoặc dùng Colab |
+| Nhận diện sai tập trung | Thay đổi `THRESHOLDS[<word>]` → cao hơn |
+| Từ bị lặp | Tăng `IDLE_THRESHOLD` từ 15 → 25 |
+
+### Groq & TTS
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| `Groq: UNAUTHENTICATED` | Thêm `GROQ_API_KEY` vào `.env`; restart terminal |
+| `Groq rate limit exceeded` | Chờ vài phút; hoặc dùng API key khác |
+| TTS không phát | Kiểm tra speaker; file audio được lưu tại `cache_tts/` |
+| Chữ Việt lỗi trên UI | Đổi `FONT_PATH` → tên font Việt (ví dụ `Arial.ttf` trên Windows) |
+| Audio garbled / tiếng kỳ | Cài lại `vieneu==2.7.0`; kiểm tra `librosa`, `soundfile` |
+
+### Performance & Debugging
+
+| Triệu chứng | Cách xử lý |
+|-------------|-----------|
+| FPS quá thấp (< 15 fps) | Giảm resolution; tăng `PREDICT_EVERY`; dùng GPU |
+| Inference lấy > 100ms | Giảm `WINDOW_SIZE` hoặc `KP_SIZE` (nếu có thể) |
+| TTS worker not ready | Chờ dòng `TTS: READY` ở khởi động; hoặc bỏ Groq |
+
+---
+
+## API & Khởi chạy lập trình
+
+### Sử dụng GestureRecognizer
+
+```python
+from src.core.gesture_recognizer import GestureRecognizer
+from config import Config
+
+recognizer = GestureRecognizer()
+
+# Mỗi frame
+result = recognizer.update(
+    keypoints,        # shape (45, 126) hoặc None
+    hand_detected,    # bool
+    model,            # TFLiteModelWrapper hoặc None
+    device='CPU'
+)
+
+# Output dict
+{
+    'predictions': [...],        # shape (11,) softmax
+    'word': 'Gap',               # class hiện tại
+    'confidence': 0.85,
+    'ready_to_finalize': True,   # Từ chốt?
+    'finalized_word': 'Gap',     # Từ chốt (nếu ready)
+}
+
+# Reset sau khi xử lý
+recognizer.reset_gesture()
+```
+
+### Sử dụng VideoProcessor
+
+```python
+from src.processors.video_processor import VideoProcessor
+
+vp = VideoProcessor('data/test.mp4')  # hoặc '0' cho webcam
+
+while vp.is_open():
+    ret, frame, h, w = vp.read_frame()
+    if not ret:
+        break
+    # Xử lý frame
+    
+vp.release()
+```
+
+### Sử dụng Groq
+
+```python
+from src.processors.groq_processor import GroqProcessor
+
+groq = GroqProcessor()
+result = groq.generate_sentence(['Xin_chao', 'Toi', 'Ten'])
+# Output: {'sentence': 'Xin chào, tôi tên là ...', 'explanation': '...', 'params': {...}}
+```
+
+### Sử dụng TTS
+
+```python
+from src.processors.tts_processor import speak_dynamic
+
+tone_params = {'tone': 'neutral'}  # hoặc {'tone': 'happy'}, ...
+speak_dynamic('Xin chào, tôi tên là Hưng', tone_params, gender='nam')
+```
 
 ---
 
@@ -415,8 +889,48 @@ Video / webcam
 
 ---
 
-## Giấy phép
-Dự án được phát triển dưới dạng mã nguồn mở phục vụ mục đích nghiên cứu và học tập. Cảm ơn sự hỗ trợ từ các thư viện mã nguồn mở:
-- MediaPipe (Google)
-- Llama-3 (Meta / Groq)
-- VieNeu-TTS-v2 (Phạm Nguyễn Ngọc Bảo)
+---
+
+## Lộ trình phát triển (Roadmap)
+
+- [x] **v1.0.0**: BiLSTM cơ bản + Gender detection + Groq + TTS
+- [ ] **v1.1.0**: Thêm từ vựng (20+ từ); cải thiện độ chính xác
+- [ ] **v1.2.0**: Web UI (Gradio / Streamlit)
+- [ ] **v2.0.0**: Mô hình Transformer; hỗ trợ câu (sequence-to-sequence)
+
+---
+
+## Đóng góp
+
+Chúng tôi hoan nghênh những đóng góp từ cộng đồng!
+
+- **Bug reports**: Mở issue trên GitHub
+- **Feature requests**: Thảo luận trong discussions
+- **Pull requests**: Fork → branch → commit → push → PR
+
+---
+
+## Tác giả & Giấy phép
+
+**Phát triển bởi:** Hung (Hưng) & Contributors
+
+**Giấy phép:** Open Source (MIT / Apache 2.0 — xem LICENSE)
+
+**Cảm ơn:**
+- MediaPipe (Google) — Pose & Hand detection
+- TensorFlow (Google) — ML framework
+- Groq — LLM API
+- VieNeu-TTS-v2 — Vietnamese TTS
+- sea-g2p & onnxruntime — Hỗ trợ xử lý
+
+---
+
+## Liên hệ
+
+- 📧 Email: [đặt email tại đây]
+- 🐙 GitHub: [link GitHub]
+- 💬 Discord/Forum: [nếu có]
+
+---
+
+**Happy signing! 🤟**

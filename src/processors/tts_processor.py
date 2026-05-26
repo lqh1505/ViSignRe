@@ -14,8 +14,8 @@ os.environ["HF_HOME"] = os.path.join(os.getcwd(), "models", "vieneu_cache")
 AUDIO_TMP_DIR = os.path.join(os.getcwd(), "models", "vieneu_cache", "tmp_audio")
 
 tts_engine = None
-voice_nu = None
-voice_nam = None
+voice_female = None
+voice_male = None
 _model_ready = threading.Event()
 
 def _cleanup_old_audio():
@@ -36,7 +36,7 @@ def _cleanup_old_audio():
             print(f"[WARNING] [TTS] Cleanup failed: {e}")
 
 def _load_model_bg():
-    global tts_engine, voice_nu, voice_nam
+    global tts_engine, voice_female, voice_male
     try:
         os.makedirs(AUDIO_TMP_DIR, exist_ok=True)
         _cleanup_old_audio()
@@ -45,8 +45,8 @@ def _load_model_bg():
         from vieneu import Vieneu
 
         tts_engine = Vieneu(mode="turbo")
-        voice_nu = tts_engine.get_preset_voice("Bích Ngọc (Nữ - Miền Bắc)")
-        voice_nam = tts_engine.get_preset_voice("Phạm Tuyên (Nam - Miền Bắc)")
+        voice_female = tts_engine.get_preset_voice("Bích Ngọc (Nữ - Miền Bắc)")
+        voice_male = tts_engine.get_preset_voice("Phạm Tuyên (Nam - Miền Bắc)")
         
         print("[INFO] [TTS] Model ready.")
         _model_ready.set()
@@ -55,7 +55,7 @@ def _load_model_bg():
 
 threading.Thread(target=_load_model_bg, daemon=True).start()
 
-def speak_dynamic(text: str, emotion_params: dict = None, gender: str = "nam"):
+def speak_dynamic(text: str, emotion_params: dict = None, gender: str = "female"):
     if not _model_ready.is_set():
         logging.warning("[TTS] Waiting for model to load...")
         _model_ready.wait()
@@ -65,7 +65,7 @@ def speak_dynamic(text: str, emotion_params: dict = None, gender: str = "nam"):
         return
 
     try:
-        selected_voice = voice_nam if gender.lower() == "nam" else voice_nu
+        selected_voice = voice_male if gender.lower() == "male" else voice_female
         logging.info("[TTS] Speaking (%s)", gender.upper())
 
         audio = tts_engine.infer(text=text, voice=selected_voice)
