@@ -69,6 +69,13 @@ class Config:
     FONT_SIZE_SM = 18
     FLIP_VIDEO = False
 
+    POSE_SKIP_FRAMES = 3
+    WINDOW_NAME = 'ViSignRe'
+    GESTURE_WINDOW_INDEX = 0
+    HAND_WRIST_INDEX = 0
+    FACE_REGION_INDICES = list(range(11))
+    FACE_ROI_MARGIN_RATIO = 0.2
+
     @classmethod
     def display(cls, label: str) -> str:
         return cls.LABEL_DISPLAY.get(label, label)

@@ -1,13 +1,36 @@
 """Hand keypoint extraction relative to the wrist."""
 
+from typing import Tuple
 import numpy as np
 from config import Config
 
 _KP_PER_HAND = Config.KP_SIZE // 2
 
 
-def extract_keypoints(multi_hand_landmarks, multi_handedness,
-                      action_zone_y: float) -> tuple:
+def extract_keypoints(
+    multi_hand_landmarks,
+    multi_handedness,
+    action_zone_y: float
+) -> Tuple[np.ndarray, bool]:
+    """
+    Extract and normalize hand keypoints relative to wrist position.
+
+    Keypoint layout:
+    - Left hand (indices 0-62): 21 landmarks × 3 (x, y, z)
+    - Right hand (indices 63-125): 21 landmarks × 3 (x, y, z)
+    All coordinates are relative to wrist position.
+    Hands with wrist below action_zone_y are filtered out.
+
+    Args:
+        multi_hand_landmarks: List of MediaPipe hand landmark objects
+        multi_handedness: List of hand classification (Left/Right) from MediaPipe
+        action_zone_y: Y threshold for valid hand region [0, 1]
+
+    Returns:
+        Tuple of:
+        - kp: Flattened keypoint array (shape: KP_SIZE=126,)
+        - hand_detected: True if at least one valid hand in frame
+    """
     kp = np.zeros(Config.KP_SIZE)
     hand_detected = False
 

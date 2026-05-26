@@ -1,5 +1,6 @@
 """Normalize keypoint sequences for collection and training."""
 
+from typing import List
 import numpy as np
 
 ZERO_THRESHOLD = 1e-6
@@ -7,6 +8,17 @@ MAX_GAP = 3
 
 
 def any_hand_active(kp: np.ndarray) -> bool:
+    """
+    Check if any hand keypoints are active (non-zero).
+
+    Checks both left (0-63) and right (63-126) hand regions.
+
+    Args:
+        kp: Flattened keypoint array (shape: 126,)
+
+    Returns:
+        True if any keypoint has magnitude > ZERO_THRESHOLD
+    """
     return (
         np.linalg.norm(kp[0:63]) > ZERO_THRESHOLD
         or np.linalg.norm(kp[63:126]) > ZERO_THRESHOLD
@@ -14,6 +26,19 @@ def any_hand_active(kp: np.ndarray) -> bool:
 
 
 def fill_gaps(frames: np.ndarray, max_gap: int = MAX_GAP) -> np.ndarray:
+    """
+    Interpolate inactive frames within gaps (up to max_gap size).
+
+    Strategy: Linear interpolation between active frames.
+    Small gaps (≤ max_gap) are filled; large gaps remain zero-padded.
+
+    Args:
+        frames: Array of keypoint frames (shape: T, KP_SIZE)
+        max_gap: Maximum gap size to fill
+
+    Returns:
+        Frames with small gaps interpolated
+    """
     result = frames.copy()
     T = len(result)
     active = [any_hand_active(result[i]) for i in range(T)]
@@ -47,6 +72,21 @@ def fill_gaps(frames: np.ndarray, max_gap: int = MAX_GAP) -> np.ndarray:
 
 
 def trim_and_center_pad(frames: np.ndarray, seq_len: int) -> np.ndarray:
+    """
+    Trim to active region and center-pad to target sequence length.
+
+    Strategy:
+    1. Find first and last active frames
+    2. If longer than target: center-crop
+    3. If shorter: pad equally on both sides
+
+    Args:
+        frames: Array of keypoint frames (shape: T, KP_SIZE)
+        seq_len: Target sequence length
+
+    Returns:
+        Frames padded/trimmed to seq_len (shape: seq_len, KP_SIZE)
+    """
     kp_size = frames.shape[1]
     active_indices = [i for i in range(len(frames)) if any_hand_active(frames[i])]
 
@@ -72,7 +112,17 @@ def trim_and_center_pad(frames: np.ndarray, seq_len: int) -> np.ndarray:
     ], axis=0)
 
 
-def normalize_sequence(frames, seq_len: int) -> np.ndarray:
+def normalize_sequence(frames: List, seq_len: int) -> np.ndarray:
+    """
+    Full normalization pipeline: fill gaps → trim & pad.
+
+    Args:
+        frames: List of keypoint arrays or numpy array (shape: T, KP_SIZE)
+        seq_len: Target sequence length (typically 45)
+
+    Returns:
+        Normalized array (shape: seq_len, KP_SIZE)
+    """
     arr = np.array(frames, dtype=np.float32)
     arr = fill_gaps(arr)
     arr = trim_and_center_pad(arr, seq_len)

@@ -56,6 +56,7 @@ htmlcov/
 hf_cache/
 .cache/
 models/vieneu_cache/
+models/*.caffemodel
 
 # TensorFlow / Keras
 *.log

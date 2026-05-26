@@ -5,6 +5,11 @@ import sys
 import warnings
 import threading
 
+_ROOT = os.path.abspath(os.path.dirname(__file__))
+if _ROOT not in sys.path:
+    sys.path.insert(0, _ROOT)
+os.chdir(_ROOT)
+
 class SuppressStderr:
     def __enter__(self):
         self.null_fd = os.open(os.devnull, os.O_RDWR)
@@ -144,8 +149,8 @@ def main():
         logging.error("Component initialization failed: %s", e)
         sys.exit(1)
 
-    cv2.namedWindow('ViSignRe', cv2.WINDOW_NORMAL)
-    cv2.resizeWindow('ViSignRe', Config.WIN_W, Config.WIN_H)
+    cv2.namedWindow(Config.WINDOW_NAME, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(Config.WINDOW_NAME, Config.WIN_W, Config.WIN_H)
 
     sentence = []
     action_zone_y = Config.ACTION_ZONE_FALLBACK
@@ -171,7 +176,7 @@ def main():
 
             _t0 = _time.perf_counter()
             _pose_skip += 1
-            if _pose_skip >= 3:
+            if _pose_skip >= Config.POSE_SKIP_FRAMES:
                 _pose_skip = 0
                 pose_results = pose_detector.process(image_rgb)
                 pose_detected = False
@@ -188,14 +193,14 @@ def main():
                     if current_gender is None:
                         try:
                             lm = pose_results.pose_landmarks.landmark
-                            face_x = [lm[i].x for i in range(11)]
-                            face_y = [lm[i].y for i in range(11)]
+                            face_x = [lm[i].x for i in Config.FACE_REGION_INDICES]
+                            face_y = [lm[i].y for i in Config.FACE_REGION_INDICES]
 
                             x_min, x_max = int(min(face_x) * w), int(max(face_x) * w)
                             y_min, y_max = int(min(face_y) * h), int(max(face_y) * h)
 
-                            margin_x = int((x_max - x_min) * 0.2)
-                            margin_y = int((y_max - y_min) * 0.2)
+                            margin_x = int((x_max - x_min) * Config.FACE_ROI_MARGIN_RATIO)
+                            margin_y = int((y_max - y_min) * Config.FACE_ROI_MARGIN_RATIO)
 
                             fx1, fx2 = max(0, x_min - margin_x), min(w, x_max + margin_x)
                             fy1, fy2 = max(0, y_min - margin_y), min(h, y_max + margin_y)
@@ -219,7 +224,7 @@ def main():
 
             if hand_results.multi_hand_landmarks:
                 for hand_lm in hand_results.multi_hand_landmarks:
-                    wrist = hand_lm.landmark[0]
+                    wrist = hand_lm.landmark[Config.HAND_WRIST_INDEX]
                     color = C_GREEN if wrist.y < action_zone_y else C_RED
                     hand_detector.draw(frame, hand_lm, color=color)
 
@@ -279,7 +284,7 @@ def main():
             )
             cv2.rectangle(frame, (0, h - 65), (w, h), (20, 20, 20), -1)
 
-            cv2.imshow('ViSignRe', frame)
+            cv2.imshow(Config.WINDOW_NAME, frame)
 
             key = cv2.waitKey(1) & 0xFF
             if key == ord('q'):

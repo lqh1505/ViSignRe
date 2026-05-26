@@ -79,6 +79,20 @@ GROQ_API_KEY=gsk_your_key_here
 
 Lấy key tại: https://console.groq.com/keys
 
+### Tải mô hình Giới tính (Bắt buộc cho Auto-TTS)
+
+Tính năng này giúp tự động chọn giọng TTS Nam/Nữ. Để tối ưu kho chứa, bạn cần tự tải file trọng số (45MB) theo các bước sau:
+
+1. Truy cập [lsfhan/age-gender-detection](https://github.com/lsfhan/age-gender-detection) và tải 2 file: `gender_deploy.prototxt` và `gender_net.caffemodel`.
+2. Đổi tên chúng lần lượt thành **`gender.prototxt`** và **`gender.caffemodel`**.
+3. Di chuyển cả 2 file vào thư mục `models/`. Cấu trúc cuối cùng sẽ như sau:
+
+```text
+models/
+├── gender.prototxt
+├── gender.caffemodel
+└── ViSignRe.tflite
+
 ---
 
 ## Hướng dẫn sử dụng đầy đủ
@@ -336,6 +350,10 @@ ViSignRe/
     │   ├── collect_data.py      # Bước 1
     │   └── train.py             # Bước 3
     ├── processors/              # Video, Groq
+    |   ├── gender_detector.py
+    |   ├── groq_processor.py
+    |   ├── tts_processor.py
+    |   ├── tts_processor.py
     ├── ui/
     │   ├── renderers.py
     │   └── quy_dao.py           # Bước 2
@@ -349,13 +367,19 @@ ViSignRe/
 
 ```
 Video / webcam
-    → MediaPipe Pose (action zone) + Hands (keypoint)
-    → Cửa sổ 45 frame × 126
-    → TFLite BiLSTM (11 lớp)
-    → GestureRecognizer (vote, idle, chống lặp từ)
-    → UI tiếng Việt
-    → [Groq] câu hoàn chỉnh
-    → [VieNeu-TTS-v2] Phát âm thanh Offline (Giọng Nam/Nữ) → result.txt
+    ├── Nhánh 1: MediaPipe Pose (action zone) + Hands (keypoint)
+    │   → Cửa sổ 45 frame × 126
+    │   → TFLite BiLSTM (11 lớp)
+    │   → GestureRecognizer (vote, idle, chống lặp từ)
+    │
+    └── Nhánh 2: Trích xuất vùng khuôn mặt (Face ROI)
+        → Mô hình OpenCV DNN (Gender Detector)
+        → Khóa mục tiêu giới tính (Nam/Nữ)
+        
+    (Hội tụ tín hiệu)
+    → UI hiển thị tiếng Việt
+    → [Groq Llama-3] Biên dịch từ khóa thành câu hoàn chỉnh
+    → [VieNeu-TTS-v2] Phát âm thanh Offline (theo chuẩn giọng Nam/Nữ) → result.txt
 ```
 
 ---
