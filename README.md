@@ -25,7 +25,6 @@ Video/Webcam
 3. [Hướng dẫn sử dụng đầy đủ](#hướng-dẫn-sử-dụng-đầy-đủ) — Quick start + Web + Full workflow
 4. [Cấu hình `config.py`](#cấu-hình-configpy)
 5. [Cấu trúc dự án](#cấu-trúc-dự-án)
-6. [Xử lý sự cố](#xử-lý-sự-cố)
 
 ---
 
@@ -712,101 +711,6 @@ ViSignRe/
 
 ---
 
-## Luồng xử lý (runtime)
-
-```
-Video / webcam
-    ├── Nhánh 1: MediaPipe Pose (action zone) + Hands (keypoint)
-    │   → Cửa sổ 45 frame × 126
-    │   → TFLite BiLSTM (11 lớp)
-    │   → GestureRecognizer (vote, idle, chống lặp từ)
-    │
-    └── Nhánh 2: Trích xuất vùng khuôn mặt (Face ROI)
-        → Mô hình OpenCV DNN (Gender Detector)
-        → Khóa mục tiêu giới tính (Nam/Nữ)
-        
-    (Hội tụ tín hiệu)
-    → UI hiển thị tiếng Việt
-    → [Groq Llama-3] Biên dịch từ khóa thành câu hoàn chỉnh
-    → [VieNeu-TTS-v2] Phát âm thanh Offline (theo chuẩn giọng Nam/Nữ) → result.txt
-```
-
----
-
-## Xử lý sự cố
-
-### Khởi động & Cài đặt
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `ModuleNotFoundError: No module named 'src'` | Chạy từ **root** (`ViSignRe/`); hoặc thêm `sys.path.insert(0, os.path.dirname(__file__))` |
-| `FileNotFoundError: requirements.txt` | Chạy `pip install -r requirements.txt` từ thư mục gốc |
-| `tensorflow.__version__` lỗi | Xóa `.venv`, tạo lại: `python -m venv .venv && pip install -r requirements.txt` |
-| `No module named 'mediapipe'` | `pip install mediapipe==0.10.14` |
-
-### Webcam & Video
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `VideoCapture(0)` không mở | Thử `'1'`, `'2'`, ... hoặc kiểm tra quyền camera |
-| `Cannot open video file` | Kiểm tra `VIDEO_PATH` tồn tại; thử path tuyệt đối |
-| Video giật/lag | Giảm `WIN_W`, `WIN_H`; tăng `PREDICT_EVERY` |
-| Pose/Hand không detect | Tăng `MP_CONFIDENCE` từ 0.5 → 0.3; hoặc tốt hơn ánh sáng |
-
-### Quay dữ liệu (collect_data.py)
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| Mẫu bị SKIP liên tục | Tay phải ở **trên** line xanh; đứng đủ người trong khung |
-| Keypoint bị bỏ (< 10 frame hợp lệ) | Quay bằng webcam ngoài (không laptop); ánh sáng sáng hơn |
-| `Path not found: data/dataset_words/` | Tạo thư mục thủ công hoặc sửa `WORD_TO_RECORD` |
-| File .npy lỗi | Xóa file bị hỏng; quay lại |
-
-### Huấn luyện (train.py)
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `ValueError: not enough values to unpack` | Quay **đủ** mẫu (~60 samples/lớp trước khi train) |
-| `OutOfMemoryError` | Giảm `BATCH_SIZE` hoặc `WINDOW_SIZE` |
-| Val loss không giảm | Tăng `EPOCHS`, giảm `LEARNING_RATE`, hoặc quay thêm dữ liệu |
-| Train rất chậm | Kiểm tra `CUDA_VISIBLE_DEVICES=-1` (CPU mode); không dùng GPU |
-
-### Export TFLite (export_tflite.py)
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `TypeError: cannot pickle` | Dùng CPU (`CUDA_VISIBLE_DEVICES=-1`); nâng TensorFlow 2.15+ |
-| `UnsupportedOperationError: LSTM` | Thêm `SELECT_TF_OPS` trong converter |
-| File `.tflite` rỗng | Chạy lại script hoặc dùng Colab |
-
-### Runtime (main.py)
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `Model not found: models/ViSignRe.tflite` | Export mô hình bước 4; sửa `MODEL_PATH` |
-| `Cannot read model file` | File bị hỏng → export lại hoặc dùng Colab |
-| Nhận diện sai tập trung | Thay đổi `THRESHOLDS[<word>]` → cao hơn |
-| Từ bị lặp | Tăng `IDLE_THRESHOLD` từ 15 → 25 |
-
-### Groq & TTS
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| `Groq: UNAUTHENTICATED` | Thêm `GROQ_API_KEY` vào `.env`; restart terminal |
-| `Groq rate limit exceeded` | Chờ vài phút; hoặc dùng API key khác |
-| TTS không phát | Kiểm tra speaker; file audio được lưu tại `cache_tts/` |
-| Chữ Việt lỗi trên UI | Đổi `FONT_PATH` → tên font Việt (ví dụ `Arial.ttf` trên Windows) |
-| Audio garbled / tiếng kỳ | Cài lại `vieneu==2.7.0`; kiểm tra `librosa`, `soundfile` |
-
-### Performance & Debugging
-
-| Triệu chứng | Cách xử lý |
-|-------------|-----------|
-| FPS quá thấp (< 15 fps) | Giảm resolution; tăng `PREDICT_EVERY`; dùng GPU |
-| Inference lấy > 100ms | Giảm `WINDOW_SIZE` hoặc `KP_SIZE` (nếu có thể) |
-| TTS worker not ready | Chờ dòng `TTS: READY` ở khởi động; hoặc bỏ Groq |
-
----
 
 ## API & Khởi chạy lập trình
 
@@ -889,26 +793,6 @@ speak_dynamic('Xin chào, tôi tên là Hưng', tone_params, gender='nam')
 
 ---
 
----
-
-## Lộ trình phát triển (Roadmap)
-
-- [x] **v1.0.0**: BiLSTM cơ bản + Gender detection + Groq + TTS
-- [ ] **v1.1.0**: Thêm từ vựng (20+ từ); cải thiện độ chính xác
-- [ ] **v1.2.0**: Web UI (Gradio / Streamlit)
-- [ ] **v2.0.0**: Mô hình Transformer; hỗ trợ câu (sequence-to-sequence)
-
----
-
-## Đóng góp
-
-Chúng tôi hoan nghênh những đóng góp từ cộng đồng!
-
-- **Bug reports**: Mở issue trên GitHub
-- **Feature requests**: Thảo luận trong discussions
-- **Pull requests**: Fork → branch → commit → push → PR
-
----
 
 ## Tác giả & Giấy phép
 
@@ -924,13 +808,3 @@ Chúng tôi hoan nghênh những đóng góp từ cộng đồng!
 - sea-g2p & onnxruntime — Hỗ trợ xử lý
 
 ---
-
-## Liên hệ
-
-- 📧 Email: [đặt email tại đây]
-- 🐙 GitHub: [link GitHub]
-- 💬 Discord/Forum: [nếu có]
-
----
-
-**Happy signing! 🤟**
